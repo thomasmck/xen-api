@@ -231,6 +231,7 @@ Executable xapi
     xcp.v6,
     xcp.memory,
     xcp.updates,
+    xcp.gpumon,
     rrdd-plugin
 
 Executable xe
@@ -475,6 +476,7 @@ Executable suite
     xcp.network,
     xcp.v6,
     xcp.memory,
+    xcp.gpumon,
     rrdd-plugin,
     xenopsd
 
