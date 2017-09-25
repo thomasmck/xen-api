@@ -858,20 +858,27 @@ let read_database_pool_uuid ~__context ~self =
   | None -> ""
 
 let change_cbt_status ~__context ~self ~new_cbt_enabled ~caller_name =
-  if Db.VDI.get_cbt_enabled ~__context ~self <> new_cbt_enabled then begin
-    let task = Context.get_task_id __context in
-    let sr = Db.VDI.get_SR ~__context ~self in
-    let sr = Db.SR.get_uuid ~__context ~self:sr in
-    let vdi = Db.VDI.get_location ~__context ~self in
-    let module C = Storage_interface.Client(struct let rpc = Storage_access.rpc end) in
-    let call_f = if new_cbt_enabled then C.VDI.enable_cbt else C.VDI.disable_cbt in
-    Storage_access.transform_storage_exn
-      (fun () ->
-         call_f ~dbg:(Ref.string_of task) ~sr ~vdi
-      );
-    Db.VDI.set_cbt_enabled ~__context ~self ~value:new_cbt_enabled
-  end else
-    debug "%s: Not doing anything, CBT is already %s" caller_name (if new_cbt_enabled then "enabled" else "disabled")
+  let pool = Helpers.get_pool ~__context in
+  let restrictions = Db.Pool.get_restrictions ~__context ~self:pool in
+  try 
+    if (List.assoc "restrict_CBT" restrictions) = "false" && new_cbt_enabled = true then begin   
+      if Db.VDI.get_cbt_enabled ~__context ~self <> new_cbt_enabled then begin
+        let task = Context.get_task_id __context in
+        let sr = Db.VDI.get_SR ~__context ~self in
+        let sr = Db.SR.get_uuid ~__context ~self:sr in
+        let vdi = Db.VDI.get_location ~__context ~self in
+        let module C = Storage_interface.Client(struct let rpc = Storage_access.rpc end) in
+        let call_f = if new_cbt_enabled then C.VDI.enable_cbt else C.VDI.disable_cbt in
+        Storage_access.transform_storage_exn
+          (fun () ->
+             call_f ~dbg:(Ref.string_of task) ~sr ~vdi
+          );
+        Db.VDI.set_cbt_enabled ~__context ~self ~value:new_cbt_enabled
+      end else
+        debug "%s: Not doing anything, CBT is already %s" caller_name (if new_cbt_enabled then "enabled" else "disabled")
+    end else
+      debug "%s: restrict, CBT is already %s" caller_name (if new_cbt_enabled then "enabled" else "disabled")
+  with Not_found -> debug "%s: Debug, CBT is already %s" caller_name (if new_cbt_enabled then "enabled" else "disabled")
 
 let enable_cbt = change_cbt_status ~new_cbt_enabled:true ~caller_name:"VDI.enable_cbt"
 let disable_cbt = change_cbt_status ~new_cbt_enabled:false ~caller_name:"VDI.disable_cbt"
