@@ -7541,6 +7541,7 @@ let pool =
        ; field ~qualifier:DynamicRO ~in_product_since:rel_dundee ~default_value:(Some (VMap [])) ~ty:(Map(String, String)) "cpu_info" "Details about the physical CPUs on the pool"
        ; field ~qualifier:RW ~in_product_since:rel_dundee ~default_value:(Some (VBool false)) ~ty:Bool "policy_no_vendor_device" "The pool-wide policy for clients on whether to use the vendor device or not on newly created VMs. This field will also be consulted if the 'has_vendor_device' field is not specified in the VM.create call."
        ; field ~qualifier:RW ~in_product_since:rel_ely ~default_value:(Some (VBool false)) ~ty:Bool "live_patching_disabled" "The pool-wide flag to show if the live patching feauture is disabled or not."
+       ; field ~writer_roles:_R_POOL_ADMIN ~qualifier:RW ~in_product_since:rel_inverness ~default_value:(Some (VBool false)) ~ty:Bool "nbd_insecure" "The pool-wide switch to disable TLS for xapi-nbd"
        ])
     ()
 
