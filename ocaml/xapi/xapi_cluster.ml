@@ -96,20 +96,25 @@ let pool_create ~__context ~network ~cluster_stack ~token_timeout ~token_timeout
   validate_params ~token_timeout ~token_timeout_coefficient;
   let master = Helpers.get_master ~__context in
   let hosts = Db.Host.get_all ~__context in
+  let ha_armed = try bool_of_string (Localdb.get Constants.ha_armed) with _ -> false in
+  if ha_armed then
+    (* Raise proper error *)
+    raise Api_errors.Server_error(Api_errors.ha_not_enabled, [])
+  else begin
+    let cluster = Helpers.call_api_functions ~__context (fun rpc session_id ->
+        Client.Client.Cluster.create ~rpc ~session_id ~network ~cluster_stack:"corosync" ~pool_auto_join:true ~token_timeout ~token_timeout_coefficient)
+    in
 
-  let cluster = Helpers.call_api_functions ~__context (fun rpc session_id ->
-      Client.Client.Cluster.create ~rpc ~session_id ~network ~cluster_stack:"corosync" ~pool_auto_join:true ~token_timeout ~token_timeout_coefficient)
-  in
+    List.iter (fun host ->
+        if master <> host then
+          (* We need to run this code on the slave *)
+          Helpers.call_api_functions ~__context (fun rpc session_id ->
+              let cluster_host_ref = Client.Client.Cluster_host.create ~rpc ~session_id ~cluster ~host in
+              D.debug "Created Cluster_host: %s" (Ref.string_of cluster_host_ref);
+            )) hosts;
 
-  List.iter (fun host ->
-      if master <> host then
-        (* We need to run this code on the slave *)
-        Helpers.call_api_functions ~__context (fun rpc session_id ->
-            let cluster_host_ref = Client.Client.Cluster_host.create ~rpc ~session_id ~cluster ~host in
-            D.debug "Created Cluster_host: %s" (Ref.string_of cluster_host_ref);
-          )) hosts;
-
-  cluster
+    cluster
+  end
 
 (* Helper function; if opn is None return all, else return those not equal to it *)
 let filter_on_option opn xs =
