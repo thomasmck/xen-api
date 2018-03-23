@@ -26,47 +26,53 @@ let validate_params ~token_timeout ~token_timeout_coefficient =
 
 let create ~__context ~network ~cluster_stack ~pool_auto_join ~token_timeout ~token_timeout_coefficient =
   Pool_features.assert_enabled ~__context ~f:Features.Corosync;
-  (* TODO: take network lock *)
-  with_clustering_lock (fun () ->
-      let dbg = Context.string_of_task __context in
-      validate_params ~token_timeout ~token_timeout_coefficient;
-      let cluster_ref = Ref.make () in
-      let cluster_host_ref = Ref.make () in
-      let cluster_uuid = Uuidm.to_string (Uuidm.create `V4) in
-      let cluster_host_uuid = Uuidm.to_string (Uuidm.create `V4) in
-      (* For now we assume we have only one pool
-         TODO: get master ref explicitly passed in as parameter*)
-      let pool = Db.Pool.get_all ~__context |> List.hd in
-      let host = Db.Pool.get_master ~__context ~self:pool in
+  let ha_armed = try bool_of_string (Localdb.get Constants.ha_armed) with _ -> false in
+  if ha_armed then
+    (* Raise proper error *)
+    raise (Api_errors.Server_error(Api_errors.ha_not_enabled, []))
+  else begin
+    (* TODO: take network lock *)
+    with_clustering_lock (fun () ->
+        let dbg = Context.string_of_task __context in
+        validate_params ~token_timeout ~token_timeout_coefficient;
+        let cluster_ref = Ref.make () in
+        let cluster_host_ref = Ref.make () in
+        let cluster_uuid = Uuidm.to_string (Uuidm.create `V4) in
+        let cluster_host_uuid = Uuidm.to_string (Uuidm.create `V4) in
+        (* For now we assume we have only one pool
+          TODO: get master ref explicitly passed in as parameter*)
+        let pool = Db.Pool.get_all ~__context |> List.hd in
+        let host = Db.Pool.get_master ~__context ~self:pool in
 
-      let pif = pif_of_host ~__context network host in
-      assert_pif_prerequisites pif;
-      let ip = ip_of_pif pif in
+        let pif = pif_of_host ~__context network host in
+        assert_pif_prerequisites pif;
+        let ip = ip_of_pif pif in
 
-      let token_timeout_ms = Int64.of_float(token_timeout*.1000.0) in
-      let token_timeout_coefficient_ms = Int64.of_float(token_timeout_coefficient*.1000.0) in
-      let init_config = {
-        Cluster_interface.local_ip = ip;
-        token_timeout_ms = Some token_timeout_ms;
-        token_coefficient_ms = Some token_timeout_coefficient_ms;
-        name = None
-      } in
+        let token_timeout_ms = Int64.of_float(token_timeout*.1000.0) in
+        let token_timeout_coefficient_ms = Int64.of_float(token_timeout_coefficient*.1000.0) in
+        let init_config = {
+          Cluster_interface.local_ip = ip;
+          token_timeout_ms = Some token_timeout_ms;
+          token_coefficient_ms = Some token_timeout_coefficient_ms;
+          name = None
+        } in
 
-      Xapi_clustering.Daemon.enable ~__context;
-      let result = Cluster_client.LocalClient.create (rpc ~__context) dbg init_config in
-      match result with
-      | Result.Ok cluster_token ->
-        D.debug "Got OK from LocalClient.create";
-        Db.Cluster.create ~__context ~ref:cluster_ref ~uuid:cluster_uuid ~network ~cluster_token ~cluster_stack
-          ~pool_auto_join ~token_timeout:token_timeout_ms ~token_timeout_coefficient:token_timeout_coefficient_ms ~current_operations:[] ~allowed_operations:[] ~cluster_config:[]
-          ~other_config:[];
-        Db.Cluster_host.create ~__context ~ref:cluster_host_ref ~uuid:cluster_host_uuid ~cluster:cluster_ref ~host ~enabled:true
-          ~current_operations:[] ~allowed_operations:[] ~other_config:[];
-        Xapi_cluster_host_helpers.update_allowed_operations ~__context ~self:cluster_host_ref;
-        D.debug "Created Cluster: %s and Cluster_host: %s" cluster_uuid cluster_host_uuid;
-        cluster_ref
-      | Result.Error error -> handle_error error
-    )
+        Xapi_clustering.Daemon.enable ~__context;
+        let result = Cluster_client.LocalClient.create (rpc ~__context) dbg init_config in
+        match result with
+        | Result.Ok cluster_token ->
+          D.debug "Got OK from LocalClient.create";
+          Db.Cluster.create ~__context ~ref:cluster_ref ~uuid:cluster_uuid ~network ~cluster_token ~cluster_stack
+            ~pool_auto_join ~token_timeout:token_timeout_ms ~token_timeout_coefficient:token_timeout_coefficient_ms ~current_operations:[] ~allowed_operations:[] ~cluster_config:[]
+            ~other_config:[];
+          Db.Cluster_host.create ~__context ~ref:cluster_host_ref ~uuid:cluster_host_uuid ~cluster:cluster_ref ~host ~enabled:true
+            ~current_operations:[] ~allowed_operations:[] ~other_config:[];
+          Xapi_cluster_host_helpers.update_allowed_operations ~__context ~self:cluster_host_ref;
+          D.debug "Created Cluster: %s and Cluster_host: %s" cluster_uuid cluster_host_uuid;
+          cluster_ref
+        | Result.Error error -> handle_error error
+      )
+  end
 
 let destroy ~__context ~self =
   let dbg = Context.string_of_task __context in
@@ -96,25 +102,19 @@ let pool_create ~__context ~network ~cluster_stack ~token_timeout ~token_timeout
   validate_params ~token_timeout ~token_timeout_coefficient;
   let master = Helpers.get_master ~__context in
   let hosts = Db.Host.get_all ~__context in
-  let ha_armed = try bool_of_string (Localdb.get Constants.ha_armed) with _ -> false in
-  if ha_armed then
-    (* Raise proper error *)
-    raise Api_errors.Server_error(Api_errors.ha_not_enabled, [])
-  else begin
-    let cluster = Helpers.call_api_functions ~__context (fun rpc session_id ->
-        Client.Client.Cluster.create ~rpc ~session_id ~network ~cluster_stack:"corosync" ~pool_auto_join:true ~token_timeout ~token_timeout_coefficient)
-    in
+  let cluster = Helpers.call_api_functions ~__context (fun rpc session_id ->
+      Client.Client.Cluster.create ~rpc ~session_id ~network ~cluster_stack:"corosync" ~pool_auto_join:true ~token_timeout ~token_timeout_coefficient)
+  in
 
-    List.iter (fun host ->
-        if master <> host then
-          (* We need to run this code on the slave *)
-          Helpers.call_api_functions ~__context (fun rpc session_id ->
-              let cluster_host_ref = Client.Client.Cluster_host.create ~rpc ~session_id ~cluster ~host in
-              D.debug "Created Cluster_host: %s" (Ref.string_of cluster_host_ref);
-            )) hosts;
+  List.iter (fun host ->
+      if master <> host then
+        (* We need to run this code on the slave *)
+        Helpers.call_api_functions ~__context (fun rpc session_id ->
+            let cluster_host_ref = Client.Client.Cluster_host.create ~rpc ~session_id ~cluster ~host in
+            D.debug "Created Cluster_host: %s" (Ref.string_of cluster_host_ref);
+          )) hosts;
 
-    cluster
-  end
+  cluster
 
 (* Helper function; if opn is None return all, else return those not equal to it *)
 let filter_on_option opn xs =
