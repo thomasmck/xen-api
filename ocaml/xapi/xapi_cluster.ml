@@ -29,7 +29,7 @@ let create ~__context ~network ~cluster_stack ~pool_auto_join ~token_timeout ~to
   let ha_armed = try bool_of_string (Localdb.get Constants.ha_armed) with _ -> false in
   if ha_armed then
     (* Raise proper error *)
-    raise (Api_errors.Server_error(Api_errors.ha_not_enabled, []))
+    raise (Api_errors.Server_error(Api_errors.incompatible_cluster_stack_active, ["xhad"]))
   else begin
     (* TODO: take network lock *)
     with_clustering_lock (fun () ->
