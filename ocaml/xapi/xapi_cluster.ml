@@ -26,7 +26,7 @@ let validate_params ~token_timeout ~token_timeout_coefficient =
 
 let create ~__context ~network ~cluster_stack ~pool_auto_join ~token_timeout ~token_timeout_coefficient =
   Pool_features.assert_enabled ~__context ~f:Features.Corosync;
-
+  (* TODO: take network lock *)
   with_clustering_lock (fun () ->
       let dbg = Context.string_of_task __context in
       validate_params ~token_timeout ~token_timeout_coefficient;
@@ -35,7 +35,7 @@ let create ~__context ~network ~cluster_stack ~pool_auto_join ~token_timeout ~to
       let cluster_uuid = Uuidm.to_string (Uuidm.create `V4) in
       let cluster_host_uuid = Uuidm.to_string (Uuidm.create `V4) in
       (* For now we assume we have only one pool
-        TODO: get master ref explicitly passed in as parameter*)
+         TODO: get master ref explicitly passed in as parameter*)
       let pool = Db.Pool.get_all ~__context |> List.hd in
       let host = Db.Pool.get_master ~__context ~self:pool in
 
