@@ -63,7 +63,7 @@ let valid_operations ~__context record _ref' =
     (* indicates a bug or a need to update this code (if we ever support multiple clusters in the pool *)
     | _::_ -> failwith "Multiple clusters exist in the pool"
     (* cluster create cannot run if ha is already enabled *)
-    | [] -> if ha_enabled then raise (Api_errors.Server_error(Api_errors.incompatible_cluster_stack_active, [current_stack]))
+    | [] -> if ha_enabled then set_errors Api_errors.incompatible_cluster_stack_active [current_stack] [ `cluster_create ]
   end;
 
   table
