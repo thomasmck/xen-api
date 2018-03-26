@@ -61,6 +61,7 @@ let valid_operations ~__context record _ref' =
     | [_] -> set_errors Api_errors.cluster_already_exists [] [ `cluster_create ]
     (* indicates a bug or a need to update this code (if we ever support multiple clusters in the pool *)
     | _::_ -> failwith "Multiple clusters exist in the pool"
+    | [] -> if ha_enabled then raise (Api_errors.Server_error(Api_errors.incompatible_cluster_stack_active, ["xhad"]))
     | _ -> ()
   end;
 
