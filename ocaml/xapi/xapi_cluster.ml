@@ -102,6 +102,7 @@ let pool_create ~__context ~network ~cluster_stack ~token_timeout ~token_timeout
   validate_params ~token_timeout ~token_timeout_coefficient;
   let master = Helpers.get_master ~__context in
   let hosts = Db.Host.get_all ~__context in
+
   let cluster = Helpers.call_api_functions ~__context (fun rpc session_id ->
       Client.Client.Cluster.create ~rpc ~session_id ~network ~cluster_stack:"corosync" ~pool_auto_join:true ~token_timeout ~token_timeout_coefficient)
   in
