@@ -318,7 +318,12 @@ let compute_max_host_failures_to_tolerate ~__context ?live_set ?protected_vms ()
   let protected_vms = match protected_vms with
     | None -> all_protected_vms ~__context
     | Some vms -> vms in
-  let nhosts = List.length (Db.Host.get_all ~__context) in
+  (* let nhosts = List.length (Db.Host.get_all ~__context) in *)
+  let host = Helpers.get_localhost ~__context in
+  let total_hosts = List.length (Db.Host.get_all ~__context) in
+  let nhosts = if Db.Cluster_host.get_refs_where ~__context ~expr:Db_filter_types.(Eq(Literal (Ref.string_of host),Field "host")) <> [] then 
+  total_hosts
+  else (total_hosts - 1) / 2 in
   (* We assume that if not(plan_exists(n)) then \forall.x>n not(plan_exists(n))
      although even if we screw this up it's not a disaster because all we need is a
      safe approximation (so ultimately "0" will do but we'd prefer higher) *)
