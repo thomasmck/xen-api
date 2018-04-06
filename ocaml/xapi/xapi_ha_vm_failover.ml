@@ -318,7 +318,12 @@ let compute_max_host_failures_to_tolerate ~__context ?live_set ?protected_vms ()
   let protected_vms = match protected_vms with
     | None -> all_protected_vms ~__context
     | Some vms -> vms in
-  let nhosts = List.length (Db.Host.get_all ~__context) in
+  let total_hosts = List.length (Db.Host.get_all ~__context) in
+  (* For corosync HA less than half of the pool can fail whilst maintaining quorum *)
+  let corosync_ha_max_hosts = ((total_hosts - 1) / 2) in
+  let nhosts = match Db.Cluster.get_all ~__context with
+    | [] -> total_hosts
+    | _ -> corosync_ha_max_hosts in
   (* We assume that if not(plan_exists(n)) then \forall.x>n not(plan_exists(n))
      although even if we screw this up it's not a disaster because all we need is a
      safe approximation (so ultimately "0" will do but we'd prefer higher) *)

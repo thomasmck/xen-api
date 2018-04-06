@@ -58,6 +58,7 @@ type pool = {
   master: host;
   slaves: host list;
   ha_host_failures_to_tolerate: int64;
+  cluster: bool;
 }
 
 let string_of_vm {memory; name_label} =
@@ -68,12 +69,13 @@ let string_of_host {memory_total; name_label; vms} =
     memory_total name_label
     (Test_printers.list string_of_vm vms)
 
-let string_of_pool {master; slaves; ha_host_failures_to_tolerate} =
+let string_of_pool {master; slaves; ha_host_failures_to_tolerate; cluster} =
   Printf.sprintf
-    "{master = %s; slaves = %s; ha_host_failures_to_tolerate = %Ld}"
+    "{master = %s; slaves = %s; ha_host_failures_to_tolerate = %Ld; cluster = %b}"
     (string_of_host master)
     (Test_printers.list string_of_host slaves)
     ha_host_failures_to_tolerate
+    cluster
 
 let load_vm ~__context ~(vm:vm) ~local_sr ~shared_sr ~local_net ~shared_net =
   let vm_ref = make_vm ~__context
@@ -120,10 +122,10 @@ let load_host ~__context ~host ~local_sr ~shared_sr ~local_net ~shared_net =
   in
   host_ref
 
-let setup ~__context {master; slaves; ha_host_failures_to_tolerate} =
+let setup ~__context {master; slaves; ha_host_failures_to_tolerate; cluster} =
   let shared_sr = make_sr ~__context ~shared:true () in
   let shared_net = make_network ~__context ~bridge:"xenbr0" () in
-
+  if cluster then Test_common.make_cluster_and_cluster_host ~__context () |> ignore;
   (* Remove all hosts added by make_test_database *)
   List.iter (fun host -> Db.Host.destroy ~__context ~self:host) (Db.Host.get_all ~__context);
 
@@ -181,6 +183,7 @@ module AllProtectedVms = Generic.Make(Generic.EncapsulateState(struct
                                             master = {memory_total = gib 256L; name_label = "master"; vms = []};
                                             slaves = [];
                                             ha_host_failures_to_tolerate = 0L;
+                                            cluster = false;
                                           },
                                           [];
                                           (* One unprotected VM. *)
@@ -194,6 +197,7 @@ module AllProtectedVms = Generic.Make(Generic.EncapsulateState(struct
                                             };
                                             slaves = [];
                                             ha_host_failures_to_tolerate = 0L;
+                                            cluster = false;
                                           },
                                           [];
                                           (* One VM which would be protected if it was running. *)
@@ -204,6 +208,7 @@ module AllProtectedVms = Generic.Make(Generic.EncapsulateState(struct
                                             };
                                             slaves = [];
                                             ha_host_failures_to_tolerate = 0L;
+                                            cluster = false;
                                           },
                                           [];
                                           (* One protected VM. *)
@@ -214,6 +219,7 @@ module AllProtectedVms = Generic.Make(Generic.EncapsulateState(struct
                                             };
                                             slaves = [];
                                             ha_host_failures_to_tolerate = 0L;
+                                            cluster = false;
                                           },
                                           ["vm"];
                                           (* One protected VM and one unprotected VM. *)
@@ -231,6 +237,7 @@ module AllProtectedVms = Generic.Make(Generic.EncapsulateState(struct
                                             };
                                             slaves = [];
                                             ha_host_failures_to_tolerate = 0L;
+                                            cluster = false;
                                           },
                                           ["vm1"];
                                         ]
@@ -270,6 +277,7 @@ module PlanForNFailures = Generic.Make(Generic.EncapsulateState(struct
                                                  {memory_total = gib 256L; name_label = "slave"; vms = []}
                                                ];
                                                ha_host_failures_to_tolerate = 1L;
+                                               cluster = false;
                                              },
                                              Xapi_ha_vm_failover.Plan_exists_for_all_VMs
                                            );
@@ -288,6 +296,7 @@ module PlanForNFailures = Generic.Make(Generic.EncapsulateState(struct
                                                  {memory_total = gib 256L; name_label = "slave"; vms = []}
                                                ];
                                                ha_host_failures_to_tolerate = 1L;
+                                               cluster = false;
                                              },
                                              Xapi_ha_vm_failover.Plan_exists_for_all_VMs
                                            );
@@ -311,6 +320,7 @@ module PlanForNFailures = Generic.Make(Generic.EncapsulateState(struct
                                                  {memory_total = gib 256L; name_label = "slave"; vms = []}
                                                ];
                                                ha_host_failures_to_tolerate = 1L;
+                                               cluster = false;
                                              },
                                              Xapi_ha_vm_failover.Plan_exists_for_all_VMs
                                            );
@@ -346,6 +356,7 @@ module PlanForNFailures = Generic.Make(Generic.EncapsulateState(struct
                                                  }
                                                ];
                                                ha_host_failures_to_tolerate = 1L;
+                                               cluster = false;
                                              },
                                              Xapi_ha_vm_failover.No_plan_exists
                                            );
@@ -415,6 +426,7 @@ module AssertNewVMPreservesHAPlan = Generic.Make(Generic.EncapsulateState(struct
                                                            {memory_total = gib 256L; name_label = "slave"; vms = []}
                                                          ];
                                                          ha_host_failures_to_tolerate = 1L;
+                                                         cluster = false;
                                                        },
                                                        {basic_vm with
                                                         ha_always_run = false;
@@ -445,6 +457,7 @@ module AssertNewVMPreservesHAPlan = Generic.Make(Generic.EncapsulateState(struct
                                                            {memory_total = gib 256L; name_label = "slave"; vms = []}
                                                          ];
                                                          ha_host_failures_to_tolerate = 1L;
+                                                         cluster = false;
                                                        },
                                                        {basic_vm with
                                                         ha_always_run = false;
@@ -483,6 +496,7 @@ module AssertNewVMPreservesHAPlan = Generic.Make(Generic.EncapsulateState(struct
                                                            };
                                                          ];
                                                          ha_host_failures_to_tolerate = 1L;
+                                                         cluster = false;
                                                        },
                                                        {basic_vm with
                                                         ha_always_run = false;
@@ -495,6 +509,56 @@ module AssertNewVMPreservesHAPlan = Generic.Make(Generic.EncapsulateState(struct
                                                    ]
                                                  end))
 
+module ComputeMaxFailures = Generic.Make(Generic.EncapsulateState(struct
+                                            module Io = struct
+                                              open Xapi_ha_vm_failover
+
+                                              type input_t = pool
+                                              type output_t = int
+
+                                              let string_of_input_t = string_of_pool
+                                              let string_of_output_t = string_of_int
+                                            end
+
+                                            module State = Test_state.XapiDb
+
+                                            let load_input __context = setup ~__context
+
+                                            let extract_output __context pool =
+                                              let max_hosts = Xapi_ha_vm_failover.compute_max_host_failures_to_tolerate ~__context () in
+                                              (* Struct requires input_t but not used here *)
+                                              pool |> ignore;
+                                              Int64.to_int max_hosts
+         
+                                            let tests = [
+                                              (* Three host pool with no VMs. *)
+                                              (
+                                                {
+                                                  master = {memory_total = gib 256L; name_label = "master"; vms = []};
+                                                  slaves = [
+                                                    {memory_total = gib 256L; name_label = "slave1"; vms = []};
+                                                    {memory_total = gib 256L; name_label = "slave2"; vms = []}
+                                                  ];
+                                                  ha_host_failures_to_tolerate = 3L;
+                                                  cluster = true;
+                                                },
+                                                1
+                                              );
+                                              (* Two hosts pool with no VMs  *)
+                                              (
+                                                {
+                                                  master = {memory_total = gib 256L; name_label = "master"; vms = []};
+                                                  slaves = [
+                                                    {memory_total = gib 256L; name_label = "slave1"; vms = []}
+                                                  ];
+                                                  ha_host_failures_to_tolerate = 2L;
+                                                  cluster = true;
+                                                },
+                                                0
+                                              );
+                                            ]
+                                          end))
+
 let test =
   "test_ha_vm_failover" >:::
   [
@@ -502,4 +566,5 @@ let test =
     "test_plan_for_n_failures" >::: PlanForNFailures.tests;
     "test_assert_new_vm_preserves_ha_plan" >:::
     AssertNewVMPreservesHAPlan.tests;
+    "test_corosync_max_host_failures" >::: ComputeMaxFailures.tests;
   ]
