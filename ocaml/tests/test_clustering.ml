@@ -173,13 +173,6 @@ let make_scenario ?(cluster_host=(Some true)) () =
   let _sm_2 : _ API.Ref.t= T.make_sm ~__context ~_type:"lvm" ~required_cluster_stack:[] () in
   __context, host, cluster, cluster_host
 
-let test_assert_correct_ha_max_host_failure_is_calculated () =
-  let __context, host, cluster, cluster_host = make_scenario () in
-  let pool = Db.Pool.get_all ~__context |> List.hd in
-  Alcotest.(check int64)
-    "test_assert_correct_ha_max_host_failure_is_calculated should pass"
-    (Db.Pool.get_ha_host_failures_to_tolerate ~__context ~self:pool) (0L)
-
 let test_assert_cluster_host_is_enabled_for_matching_sms_succeeds_if_cluster_host_is_enabled () =
   let __context, host, cluster, cluster_host = make_scenario () in
   Alcotest.(check unit)
@@ -381,8 +374,32 @@ let test_disallow_unplug_ro_with_clustering_enabled =
   ; "test_disallow_unplug_with_clustering", `Quick, test_disallow_unplug_with_clustering
   ]
 
-let test_tom = 
-  [ "test_ha_max_host_failure_calculation", `Quick, test_assert_correct_ha_max_host_failure_is_calculated]
+let test_assert_correct_ha_max_host_failure_is_calculated_one_host () =
+  let __context, host, cluster, cluster_host = make_scenario () in
+  let pool = Db.Pool.get_all ~__context |> List.hd in
+  Alcotest.(check int64)
+    "test_assert_correct_ha_max_host_failure_is_calculated should pass"
+    (0L) (Db.Pool.get_ha_host_failures_to_tolerate ~__context ~self:pool)
+
+let test_assert_correct_ha_max_host_failure_is_calculated_four_hosts () =
+  let __context, host1, cluster, cluster_host = make_scenario () in
+  let pool = Db.Pool.get_all ~__context |> List.hd in
+  for i = 0 to 2 do
+    Test_common.make_host ~__context () |> ignore;
+  done;
+  (*
+  Alcotest.(check int)
+  "test_assert_correct_ha_max_host_failure_is_calculated should pass"
+  (4) (List.length (Xapi_pool_helpers.get_master_slaves_list ~__context))
+  *)
+  Alcotest.(check int64)
+    "test_assert_correct_ha_max_host_failure_is_calculated should pass"
+    (1L) (Db.Pool.get_ha_host_failures_to_tolerate ~__context ~self:pool)
+
+let test_max_host_failover = 
+  [ "test_ha_max_host_failure_calculation_one_host", `Quick, test_assert_correct_ha_max_host_failure_is_calculated_one_host
+  ; "test_ha_max_host_failure_calculation_four_hosts", `Quick, test_assert_correct_ha_max_host_failure_is_calculated_four_hosts
+  ]
 
 let test =
   ( test_get_required_cluster_stacks
@@ -392,5 +409,5 @@ let test =
   @ test_clustering_lock_only_taken_if_needed
   @ test_assert_pif_prerequisites
   @ test_disallow_unplug_ro_with_clustering_enabled
-  @ test_tom
+  @ test_max_host_failover
   )
