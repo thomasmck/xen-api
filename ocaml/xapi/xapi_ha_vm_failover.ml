@@ -320,7 +320,7 @@ let compute_max_host_failures_to_tolerate ~__context ?live_set ?protected_vms ()
     | Some vms -> vms in
   let total_hosts = List.length (Db.Host.get_all ~__context) in
   (* For corosync HA less than half of the pool can fail whilst maintaining quorum *)
-  let corosync_ha_max_hosts = ((total_hosts - 1) / 2) in
+  let corosync_ha_max_hosts = Xapi_clustering.compute_corosync_max_host_failures ~__context in
   let nhosts = match Db.Cluster.get_all ~__context with
     | [] -> total_hosts
     | _ -> corosync_ha_max_hosts in

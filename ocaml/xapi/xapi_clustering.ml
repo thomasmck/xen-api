@@ -199,3 +199,10 @@ let is_clustering_disabled_on_host ~__context host =
   match find_cluster_host ~__context ~host with
   | None -> true (* there is no Cluster_host, therefore it is not enabled, therefore it is disabled *)
   | Some cluster_host -> not (Db.Cluster_host.get_enabled ~__context ~self:cluster_host)
+
+let compute_corosync_max_host_failures ~__context =
+  let all_hosts = Db.Host.get_all ~__context in
+  let nhosts = List.length (all_hosts) in
+  let disabled_hosts = List.length (List.filter (fun host -> is_clustering_disabled_on_host ~__context host = true ) all_hosts) in
+  let corosync_ha_max_hosts = ((nhosts - disabled_hosts  - 1) / 2) + disabled_hosts in
+  corosync_ha_max_hosts
