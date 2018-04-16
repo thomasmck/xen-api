@@ -98,6 +98,11 @@ let with_clustering_lock_if_needed ~__context ~sr_sm_type f =
     | [] -> f ()
     | _required_cluster_stacks -> with_clustering_lock f
 
+let with_clustering_lock_if_cluster_exists ~__context f = 
+  match Db.Cluster.get_all ~__context with
+    | [] -> f ()
+    | _ -> with_clustering_lock f
+
 let find_cluster_host ~__context ~host =
   match Db.Cluster_host.get_refs_where ~__context
           ~expr:(Db_filter_types.(Eq (Field "host", Literal (Ref.string_of host)))) with
